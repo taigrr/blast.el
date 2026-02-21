@@ -106,6 +106,11 @@
 (defvar blast--project-cache (make-hash-table :test 'equal)
   "Cache of directory -> project info.")
 
+(defun blast--clear-project-cache ()
+  "Clear the project info cache.
+Called when changing branches or projects to avoid stale data."
+  (clrhash blast--project-cache))
+
 (defvar blast--initialized nil
   "Whether blast has been initialized.")
 
@@ -252,6 +257,28 @@ Returns a plist with :project, :git-remote, :git-branch, :private."
 (defun blast--format-iso8601 (time)
   "Format TIME as ISO 8601 UTC string."
   (format-time-string "%Y-%m-%dT%H:%M:%SZ" time t))
+
+(defun blast--normalize-filetype (mode-name)
+  "Convert MODE-NAME (e.g. `emacs-lisp-mode') to a clean filetype string.
+Strips the `-mode' suffix and maps common names to match VS Code/Neovim conventions."
+  (let* ((name (if (symbolp mode-name) (symbol-name mode-name) mode-name))
+         (stripped (if (string-suffix-p "-mode" name)
+                       (substring name 0 (- (length name) 5))
+                     name))
+         ;; Map common Emacs major-mode names to standard filetype names
+         (mappings '(("emacs-lisp" . "elisp")
+                     ("c++" . "cpp")
+                     ("js" . "javascript")
+                     ("js2" . "javascript")
+                     ("web" . "html")
+                     ("mhtml" . "html")
+                     ("nxml" . "xml")
+                     ("sh" . "bash")
+                     ("shell-script" . "bash")
+                     ("conf-toml" . "toml")
+                     ("conf" . "conf")))
+         (mapped (cdr (assoc stripped mappings))))
+    (or mapped stripped)))
 
 ;;; Socket connection
 
@@ -569,7 +596,7 @@ Opens a dedicated connection for request-response."
   (when (blast--ignored-buffer-p)
     (return-from blast--on-buffer-activity nil))
   (let* ((filepath (buffer-file-name))
-         (filetype (symbol-name major-mode))
+         (filetype (blast--normalize-filetype major-mode))
          (info (blast--get-project-info filepath))
          (project (plist-get info :project))
          (git-remote (plist-get info :git-remote))
@@ -580,6 +607,7 @@ Opens a dedicated connection for request-response."
     (when (or (not blast--current-session)
               (not (string= (plist-get blast--current-session :project) project)))
       (blast--end-session)
+      (blast--clear-project-cache)
       (blast--start-session project git-remote filetype private git-branch))
     ;; Switch file
     (when (not (string= filepath blast--current-file))
@@ -596,7 +624,7 @@ Opens a dedicated connection for request-response."
     (return-from blast--on-text-change nil))
   (setq blast--last-activity (float-time))
   (let* ((filepath (buffer-file-name))
-         (filetype (symbol-name major-mode))
+         (filetype (blast--normalize-filetype major-mode))
          (metrics (blast--get-file-metrics filepath filetype)))
     ;; Increment action count
     (plist-put metrics :action-count (1+ (plist-get metrics :action-count)))
@@ -704,24 +732,28 @@ Opens a dedicated connection for request-response."
          (message "[blast.el] %s" result)
        (message "[blast.el] sync failed: %s" result)))))
 
+(defun blast--on-window-buffer-change (_)
+  "Hook wrapper for `window-buffer-change-functions'."
+  (blast--on-buffer-activity))
+
+(defun blast--on-after-change (&rest _)
+  "Hook wrapper for `after-change-functions'."
+  (blast--on-text-change))
+
 (defun blast--setup-hooks ()
   "Set up activity tracking hooks."
   (add-hook 'find-file-hook #'blast--on-buffer-activity)
   (add-hook 'after-save-hook #'blast--on-buffer-activity)
-  (add-hook 'window-buffer-change-functions
-            (lambda (_) (blast--on-buffer-activity)))
-  (add-hook 'after-change-functions
-            (lambda (&rest _) (blast--on-text-change)))
+  (add-hook 'window-buffer-change-functions #'blast--on-window-buffer-change)
+  (add-hook 'after-change-functions #'blast--on-after-change)
   (add-hook 'kill-emacs-hook #'blast--end-session))
 
 (defun blast--remove-hooks ()
   "Remove activity tracking hooks."
   (remove-hook 'find-file-hook #'blast--on-buffer-activity)
   (remove-hook 'after-save-hook #'blast--on-buffer-activity)
-  (remove-hook 'window-buffer-change-functions
-               (lambda (_) (blast--on-buffer-activity)))
-  (remove-hook 'after-change-functions
-               (lambda (&rest _) (blast--on-text-change)))
+  (remove-hook 'window-buffer-change-functions #'blast--on-window-buffer-change)
+  (remove-hook 'after-change-functions #'blast--on-after-change)
   (remove-hook 'kill-emacs-hook #'blast--end-session))
 
 (defun blast--shutdown ()
