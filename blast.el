@@ -65,6 +65,11 @@
   :type '(repeat symbol)
   :group 'blast)
 
+(defcustom blast-mode-lighter " Blast"
+  "Mode line lighter for `blast-mode'."
+  :type 'string
+  :group 'blast)
+
 ;;; Internal variables
 
 (defvar blast--process nil
@@ -315,25 +320,25 @@ Strips the `-mode' suffix and maps common names to match VS Code/Neovim conventi
 
 (defun blast--connect ()
   "Connect to blastd socket."
-  (when (and blast--process (process-live-p blast--process))
-    (return-from blast--connect t))
-  (blast--ensure-blastd)
-  (condition-case err
-      (progn
-        (setq blast--process
-              (make-network-process
-               :name "blast"
-               :family 'local
-               :service blast-socket-path
-               :noquery t
-               :filter #'blast--process-filter
-               :sentinel #'blast--process-sentinel))
-        (blast--debug "Connected to blastd")
-        t)
-    (error
-     (blast--debug "Connection failed: %s" (error-message-string err))
-     (setq blast--process nil)
-     nil)))
+  (if (and blast--process (process-live-p blast--process))
+      t
+    (blast--ensure-blastd)
+    (condition-case err
+        (progn
+          (setq blast--process
+                (make-network-process
+                 :name "blast"
+                 :family 'local
+                 :service blast-socket-path
+                 :noquery t
+                 :filter #'blast--process-filter
+                 :sentinel #'blast--process-sentinel))
+          (blast--debug "Connected to blastd")
+          t)
+      (error
+       (blast--debug "Connection failed: %s" (error-message-string err))
+       (setq blast--process nil)
+       nil))))
 
 (defun blast--process-filter (process output)
   "Handle OUTPUT from PROCESS."
@@ -357,16 +362,15 @@ Strips the `-mode' suffix and maps common names to match VS Code/Neovim conventi
 
 (defun blast--send (data)
   "Send DATA as JSON to blastd.  Returns t on success."
-  (unless (blast--connect)
-    (return-from blast--send nil))
-  (condition-case err
-      (let ((json-str (concat (json-encode data) "\n")))
-        (process-send-string blast--process json-str)
-        t)
-    (error
-     (blast--debug "Send failed: %s" (error-message-string err))
-     (blast--disconnect)
-     nil)))
+  (when (blast--connect)
+    (condition-case err
+        (let ((json-str (concat (json-encode data) "\n")))
+          (process-send-string blast--process json-str)
+          t)
+      (error
+       (blast--debug "Send failed: %s" (error-message-string err))
+       (blast--disconnect)
+       nil))))
 
 (defun blast--request (data callback)
   "Send DATA as JSON and call CALLBACK with (ok result) when response arrives.
@@ -448,9 +452,8 @@ Opens a dedicated connection for request-response."
 
 (defun blast--build-activities ()
   "Build list of activity payloads from current metrics."
-  (unless blast--current-session
-    (return-from blast--build-activities nil))
-  (let* ((session blast--current-session)
+  (when blast--current-session
+    (let* ((session blast--current-session)
          (project-name (if (plist-get session :private)
                            "private"
                          (plist-get session :project)))
@@ -489,7 +492,7 @@ Opens a dedicated connection for request-response."
                                     (editor . "emacs")))
                    activities)))))
      blast--file-metrics)
-    activities))
+    activities)))
 
 (defun blast--reset-flushed-metrics (keys)
   "Reset metrics for KEYS after flushing."
@@ -504,9 +507,8 @@ Opens a dedicated connection for request-response."
 
 (defun blast--flush ()
   "Flush current metrics to blastd."
-  (unless blast--current-session
-    (return-from blast--flush nil))
-  (blast--clock-out-current)
+  (when blast--current-session
+    (blast--clock-out-current)
   (let ((activities (blast--build-activities)))
     (when activities
       (let ((keys (mapcar (lambda (a) (plist-get a :key)) activities)))
@@ -515,7 +517,7 @@ Opens a dedicated connection for request-response."
         (blast--reset-flushed-metrics keys)
         (blast--debug "Flushed %d file activities" (length activities)))))
   (when blast--current-file
-    (blast--clock-in blast--current-file)))
+      (blast--clock-in blast--current-file))))
 
 (defun blast--start-flush-timer ()
   "Start the periodic flush timer."
@@ -553,34 +555,33 @@ Opens a dedicated connection for request-response."
 
 (defun blast--end-session ()
   "End the current session and send final metrics."
-  (unless blast--current-session
-    (return-from blast--end-session nil))
-  (let* ((session blast--current-session)
-         (duration (- (float-time) (plist-get session :started-at))))
-    (setq blast--current-session nil)
-    (blast--stop-flush-timer)
-    ;; Discard short sessions
-    (when (< duration 10)
-      (clrhash blast--file-metrics)
-      (setq blast--current-file nil)
-      (setq blast--current-file-entered-at nil)
-      (setq blast--last-word-count 0)
-      (setq blast--last-line-count 0)
-      (return-from blast--end-session nil))
-    (blast--clock-out-current)
-    (let ((activities (blast--build-activities)))
-      (dolist (activity activities)
-        (blast--send-activity (plist-get activity :payload)))
-      (blast--debug "Ended session: %s (%ds, %d files)%s"
-                    (or (plist-get session :project) "unknown")
-                    (round duration)
-                    (length activities)
-                    (if (plist-get session :private) " [private]" "")))
-    (clrhash blast--file-metrics)
-    (setq blast--current-file nil)
-    (setq blast--current-file-entered-at nil)
-    (setq blast--last-word-count 0)
-    (setq blast--last-line-count 0)))
+  (when blast--current-session
+    (let* ((session blast--current-session)
+           (duration (- (float-time) (plist-get session :started-at))))
+      (setq blast--current-session nil)
+      (blast--stop-flush-timer)
+      (if (< duration 10)
+          ;; Discard short sessions
+          (progn
+            (clrhash blast--file-metrics)
+            (setq blast--current-file nil)
+            (setq blast--current-file-entered-at nil)
+            (setq blast--last-word-count 0)
+            (setq blast--last-line-count 0))
+        (blast--clock-out-current)
+        (let ((activities (blast--build-activities)))
+          (dolist (activity activities)
+            (blast--send-activity (plist-get activity :payload)))
+          (blast--debug "Ended session: %s (%ds, %d files)%s"
+                        (or (plist-get session :project) "unknown")
+                        (round duration)
+                        (length activities)
+                        (if (plist-get session :private) " [private]" "")))
+        (clrhash blast--file-metrics)
+        (setq blast--current-file nil)
+        (setq blast--current-file-entered-at nil)
+        (setq blast--last-word-count 0)
+        (setq blast--last-line-count 0)))))
 
 ;;; Activity tracking hooks
 
@@ -593,9 +594,8 @@ Opens a dedicated connection for request-response."
 
 (defun blast--on-buffer-activity ()
   "Handle buffer enter/save activity."
-  (when (blast--ignored-buffer-p)
-    (return-from blast--on-buffer-activity nil))
-  (let* ((filepath (buffer-file-name))
+  (unless (blast--ignored-buffer-p)
+    (let* ((filepath (buffer-file-name))
          (filetype (blast--normalize-filetype major-mode))
          (info (blast--get-project-info filepath))
          (project (plist-get info :project))
@@ -616,13 +616,12 @@ Opens a dedicated connection for request-response."
       (blast--clock-in filepath))
     (setq blast--last-word-count (blast--count-words))
     (setq blast--last-line-count (count-lines (point-min) (point-max)))
-    (blast--reset-idle-timer)))
+    (blast--reset-idle-timer))))
 
 (defun blast--on-text-change ()
   "Handle text change activity."
-  (when (blast--ignored-buffer-p)
-    (return-from blast--on-text-change nil))
-  (setq blast--last-activity (float-time))
+  (unless (blast--ignored-buffer-p)
+    (setq blast--last-activity (float-time))
   (let* ((filepath (buffer-file-name))
          (filetype (blast--normalize-filetype major-mode))
          (metrics (blast--get-file-metrics filepath filetype)))
@@ -657,7 +656,7 @@ Opens a dedicated connection for request-response."
                                             (+ (plist-get metrics :lines-removed) (abs line-delta))))))
                              (setq blast--last-word-count new-words)
                              (setq blast--last-line-count new-lines))))))
-    (blast--reset-idle-timer)))
+    (blast--reset-idle-timer))))
 
 ;;; Timers
 
@@ -776,7 +775,7 @@ Opens a dedicated connection for request-response."
   "Toggle blast.el activity tracking mode.
 When enabled, tracks coding activity and sends to blastd daemon."
   :global t
-  :lighter " Blast"
+  :lighter blast-mode-lighter
   :group 'blast
   (if blast-mode
       (unless blast--initialized
