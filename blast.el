@@ -454,18 +454,18 @@ Opens a dedicated connection for request-response."
   "Build list of activity payloads from current metrics."
   (when blast--current-session
     (let* ((session blast--current-session)
-         (project-name (if (plist-get session :private)
-                           "private"
-                         (plist-get session :project)))
-         (remote (if (plist-get session :private)
-                     "private"
-                   (plist-get session :git-remote)))
-         (branch (if (plist-get session :private)
-                     "private"
-                   (plist-get session :git-branch)))
-         (now (float-time))
-         (activities nil))
-    (maphash
+           (project-name (if (plist-get session :private)
+                             "private"
+                           (plist-get session :project)))
+           (remote (if (plist-get session :private)
+                       "private"
+                     (plist-get session :git-remote)))
+           (branch (if (plist-get session :private)
+                       "private"
+                     (plist-get session :git-branch)))
+           (now (float-time))
+           (activities nil))
+      (maphash
      (lambda (key metrics)
        (let ((seconds (plist-get metrics :active-seconds))
              (action-count (plist-get metrics :action-count)))
@@ -509,14 +509,14 @@ Opens a dedicated connection for request-response."
   "Flush current metrics to blastd."
   (when blast--current-session
     (blast--clock-out-current)
-  (let ((activities (blast--build-activities)))
-    (when activities
-      (let ((keys (mapcar (lambda (a) (plist-get a :key)) activities)))
-        (dolist (activity activities)
-          (blast--send-activity (plist-get activity :payload)))
-        (blast--reset-flushed-metrics keys)
-        (blast--debug "Flushed %d file activities" (length activities)))))
-  (when blast--current-file
+    (let ((activities (blast--build-activities)))
+      (when activities
+        (let ((keys (mapcar (lambda (a) (plist-get a :key)) activities)))
+          (dolist (activity activities)
+            (blast--send-activity (plist-get activity :payload)))
+          (blast--reset-flushed-metrics keys)
+          (blast--debug "Flushed %d file activities" (length activities)))))
+    (when blast--current-file
       (blast--clock-in blast--current-file))))
 
 (defun blast--start-flush-timer ()
@@ -596,12 +596,12 @@ Opens a dedicated connection for request-response."
   "Handle buffer enter/save activity."
   (unless (blast--ignored-buffer-p)
     (let* ((filepath (buffer-file-name))
-         (filetype (blast--normalize-filetype major-mode))
-         (info (blast--get-project-info filepath))
-         (project (plist-get info :project))
-         (git-remote (plist-get info :git-remote))
-         (git-branch (plist-get info :git-branch))
-         (private (plist-get info :private)))
+           (filetype (blast--normalize-filetype major-mode))
+           (info (blast--get-project-info filepath))
+           (project (plist-get info :project))
+           (git-remote (plist-get info :git-remote))
+           (git-branch (plist-get info :git-branch))
+           (private (plist-get info :private)))
     (setq blast--last-activity (float-time))
     ;; Switch session if project changed
     (when (or (not blast--current-session)
@@ -609,6 +609,12 @@ Opens a dedicated connection for request-response."
       (blast--end-session)
       (blast--clear-project-cache)
       (blast--start-session project git-remote filetype private git-branch))
+    ;; Update git branch if it changed within the same project
+    (when (and blast--current-session git-branch
+              (not (equal git-branch (plist-get blast--current-session :git-branch))))
+      (blast--flush)
+      (blast--clear-project-cache)
+      (plist-put blast--current-session :git-branch git-branch))
     ;; Switch file
     (when (not (string= filepath blast--current-file))
       (blast--flush)
@@ -622,41 +628,41 @@ Opens a dedicated connection for request-response."
   "Handle text change activity."
   (unless (blast--ignored-buffer-p)
     (setq blast--last-activity (float-time))
-  (let* ((filepath (buffer-file-name))
-         (filetype (blast--normalize-filetype major-mode))
-         (metrics (blast--get-file-metrics filepath filetype)))
-    ;; Increment action count
-    (plist-put metrics :action-count (1+ (plist-get metrics :action-count)))
-    ;; Handle file switch
-    (when (not (string= filepath blast--current-file))
-      (blast--clock-out-current)
-      (blast--clock-in filepath))
-    ;; Debounced word/line counting
-    (when blast--debounce-timer
-      (cancel-timer blast--debounce-timer))
-    (setq blast--debounce-timer
-          (run-at-time (/ blast-debounce-ms 1000.0) nil
-                       (lambda ()
-                         (when (and (buffer-live-p (current-buffer))
-                                    (buffer-file-name)
-                                    (string= (buffer-file-name) filepath))
-                           (let ((new-words (blast--count-words))
-                                 (new-lines (count-lines (point-min) (point-max))))
-                             (let ((word-delta (- new-words blast--last-word-count)))
-                               (when (> word-delta 0)
-                                 (plist-put metrics :words-added
-                                            (+ (plist-get metrics :words-added) word-delta))))
-                             (let ((line-delta (- new-lines blast--last-line-count)))
-                               (cond
-                                ((> line-delta 0)
-                                 (plist-put metrics :lines-added
-                                            (+ (plist-get metrics :lines-added) line-delta)))
-                                ((< line-delta 0)
-                                 (plist-put metrics :lines-removed
-                                            (+ (plist-get metrics :lines-removed) (abs line-delta))))))
-                             (setq blast--last-word-count new-words)
-                             (setq blast--last-line-count new-lines))))))
-    (blast--reset-idle-timer))))
+    (let* ((filepath (buffer-file-name))
+           (filetype (blast--normalize-filetype major-mode))
+           (metrics (blast--get-file-metrics filepath filetype)))
+      ;; Increment action count
+      (plist-put metrics :action-count (1+ (plist-get metrics :action-count)))
+      ;; Handle file switch
+      (when (not (string= filepath blast--current-file))
+        (blast--clock-out-current)
+        (blast--clock-in filepath))
+      ;; Debounced word/line counting
+      (when blast--debounce-timer
+        (cancel-timer blast--debounce-timer))
+      (setq blast--debounce-timer
+            (run-at-time (/ blast-debounce-ms 1000.0) nil
+                         (lambda ()
+                           (when (and (buffer-live-p (current-buffer))
+                                      (buffer-file-name)
+                                      (string= (buffer-file-name) filepath))
+                             (let ((new-words (blast--count-words))
+                                   (new-lines (count-lines (point-min) (point-max))))
+                               (let ((word-delta (- new-words blast--last-word-count)))
+                                 (when (> word-delta 0)
+                                   (plist-put metrics :words-added
+                                              (+ (plist-get metrics :words-added) word-delta))))
+                               (let ((line-delta (- new-lines blast--last-line-count)))
+                                 (cond
+                                  ((> line-delta 0)
+                                   (plist-put metrics :lines-added
+                                              (+ (plist-get metrics :lines-added) line-delta)))
+                                  ((< line-delta 0)
+                                   (plist-put metrics :lines-removed
+                                              (+ (plist-get metrics :lines-removed) (abs line-delta))))))
+                               (setq blast--last-word-count new-words)
+                               (setq blast--last-line-count new-lines))))))
+      (blast--reset-idle-timer))))
 
 ;;; Timers
 
