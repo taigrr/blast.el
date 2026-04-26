@@ -193,7 +193,29 @@ Returns a plist with :project, :git-remote, :git-branch, :private."
   (let* ((dir (file-name-directory (expand-file-name filepath)))
          (cached (gethash dir blast--project-cache)))
     (if cached
-        cached
+        (let* ((git-root (plist-get cached :git-root))
+               (git-remote (plist-get cached :git-remote))
+               (git-branch (plist-get cached :git-branch)))
+          ;; Refresh mutable git metadata on every lookup so branch switches are
+          ;; noticed even when project-level info is cached.
+          (when git-root
+            (let ((remote (blast--exec
+                           (format "git -C %s remote get-url origin 2>/dev/null"
+                                   (shell-quote-argument git-root)))))
+              (when remote
+                (setq git-remote remote)))
+            (let ((branch (blast--exec
+                           (format "git -C %s rev-parse --abbrev-ref HEAD 2>/dev/null"
+                                   (shell-quote-argument git-root)))))
+              (when branch
+                (setq git-branch branch))))
+          (let ((info (list :project (plist-get cached :project)
+                            :git-root git-root
+                            :git-remote git-remote
+                            :git-branch git-branch
+                            :private (plist-get cached :private))))
+            (puthash dir info blast--project-cache)
+            info))
       (let* ((git-dir (blast--find-dir-upward ".git" dir))
              (git-root (when git-dir
                          (file-name-directory (directory-file-name git-dir))))
@@ -230,6 +252,7 @@ Returns a plist with :project, :git-remote, :git-branch, :private."
           (setq project (file-name-nondirectory (directory-file-name dir))))
         ;; Cache and return
         (let ((info (list :project project
+                          :git-root git-root
                           :git-remote git-remote
                           :git-branch git-branch
                           :private private)))

@@ -113,6 +113,36 @@
     (blast--clear-project-cache)
     (should (= (hash-table-count blast--project-cache) 0))))
 
+(ert-deftest blast-test-get-project-info-refreshes-branch-from-cache ()
+  "Test cached project info still refreshes mutable git branch metadata."
+  (let* ((root (make-temp-file "blast-root-" t))
+         (git-dir (expand-file-name ".git" root))
+         (file (expand-file-name "foo.el" root))
+         (blast--project-cache (make-hash-table :test 'equal))
+         (branch-calls 0))
+    (unwind-protect
+        (progn
+          (make-directory git-dir t)
+          (with-temp-file file
+            (insert ";; test"))
+          (cl-letf (((symbol-function 'blast--exec)
+                     (lambda (command)
+                       (cond
+                        ((string-match-p "remote get-url origin" command)
+                         "git@github.com:taigrr/blast.el.git")
+                        ((string-match-p "rev-parse --abbrev-ref HEAD" command)
+                         (setq branch-calls (1+ branch-calls))
+                         (if (= branch-calls 1) "main" "feature/cached-branch"))
+                        (t nil)))))
+            (let ((initial (blast--get-project-info file)))
+              (should (equal (plist-get initial :project)
+                             (file-name-nondirectory (directory-file-name root))))
+              (should (equal (plist-get initial :git-branch) "main")))
+            (let ((refreshed (blast--get-project-info file)))
+              (should (equal (plist-get refreshed :git-branch)
+                             "feature/cached-branch"))))))
+      (delete-directory root t))))
+
 (ert-deftest blast-test-ignored-buffer-no-file ()
   "Test that buffers without files are ignored."
   (with-temp-buffer
