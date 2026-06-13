@@ -153,13 +153,13 @@ Stop at STOP-DIR if provided."
           (setq dir parent)))
       nil)))
 
-(defun blast--find-dir-upward (dirname start-dir)
-  "Search for directory DIRNAME starting from START-DIR going upward."
+(defun blast--find-path-upward (name start-dir predicate)
+  "Search upward from START-DIR for NAME matching PREDICATE."
   (let ((dir (expand-file-name start-dir)))
     (catch 'found
       (while (not (blast--is-root-p dir))
-        (let ((path (expand-file-name dirname dir)))
-          (when (file-directory-p path)
+        (let ((path (expand-file-name name dir)))
+          (when (funcall predicate path)
             (throw 'found path)))
         (let ((parent (file-name-directory (directory-file-name dir))))
           (when (string= parent dir)
@@ -167,12 +167,24 @@ Stop at STOP-DIR if provided."
           (setq dir parent)))
       nil)))
 
+(defun blast--find-dir-upward (dirname start-dir)
+  "Search for directory DIRNAME starting from START-DIR going upward."
+  (blast--find-path-upward dirname start-dir #'file-directory-p))
+
+(defun blast--find-git-marker-upward (start-dir)
+  "Search upward from START-DIR for a Git worktree marker.
+Returns the path to either a `.git' directory or file."
+  (blast--find-path-upward ".git" start-dir
+                           (lambda (path)
+                             (or (file-directory-p path)
+                                 (file-regular-p path)))))
+
 (defun blast--get-git-root (filepath)
   "Get the git root directory for FILEPATH."
   (let* ((dir (file-name-directory (expand-file-name filepath)))
-         (git-dir (blast--find-dir-upward ".git" dir)))
-    (when git-dir
-      (file-name-directory (directory-file-name git-dir)))))
+         (git-marker (blast--find-git-marker-upward dir)))
+    (when git-marker
+      (file-name-directory (directory-file-name git-marker)))))
 
 (defun blast--exec (command)
   "Execute COMMAND and return trimmed output."
@@ -216,9 +228,9 @@ Returns a plist with :project, :git-remote, :git-branch, :private."
                             :private (plist-get cached :private))))
             (puthash dir info blast--project-cache)
             info))
-      (let* ((git-dir (blast--find-dir-upward ".git" dir))
-             (git-root (when git-dir
-                         (file-name-directory (directory-file-name git-dir))))
+      (let* ((git-marker (blast--find-git-marker-upward dir))
+             (git-root (when git-marker
+                         (file-name-directory (directory-file-name git-marker))))
              (blast-config (blast--find-file-upward ".blast.toml" dir git-root))
              (project nil)
              (git-remote nil)
