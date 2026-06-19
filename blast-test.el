@@ -282,5 +282,32 @@
     (let ((metrics (gethash "/tmp/test.el" blast--file-metrics)))
       (should (>= (plist-get metrics :active-seconds) 29)))))
 
+(ert-deftest blast-test-on-text-change-captures-source-buffer ()
+  "Test debounced metrics updates use the edited buffer state."
+  (let ((blast--current-file nil)
+        (blast--debounce-timer nil)
+        (blast--last-activity 0)
+        (blast--last-word-count 2)
+        (blast--last-line-count 1)
+        (blast--file-metrics (make-hash-table :test 'equal)))
+    (with-temp-buffer
+      (setq buffer-file-name "/tmp/source.txt")
+      (insert "one two three\nfour\n")
+      (let ((scheduled nil))
+        (cl-letf (((symbol-function 'blast--ignored-buffer-p) (lambda () nil))
+                  ((symbol-function 'blast--reset-idle-timer) (lambda () nil))
+                  ((symbol-function 'run-at-time)
+                   (lambda (_time _repeat fn)
+                     (setq scheduled fn)
+                     'fake-timer)))
+          (blast--on-text-change))
+        (should scheduled)
+        (with-temp-buffer
+          (funcall scheduled))
+        (let ((metrics (gethash "/tmp/source.txt" blast--file-metrics)))
+          (should (= (plist-get metrics :action-count) 1))
+          (should (= (plist-get metrics :words-added) 2))
+          (should (= (plist-get metrics :lines-added) 1)))))))
+
 (provide 'blast-test)
 ;;; blast-test.el ends here
