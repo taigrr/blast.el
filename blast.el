@@ -663,28 +663,30 @@ Opens a dedicated connection for request-response."
       ;; Debounced word/line counting
       (when blast--debounce-timer
         (cancel-timer blast--debounce-timer))
-      (setq blast--debounce-timer
-            (run-at-time (/ blast-debounce-ms 1000.0) nil
-                         (lambda ()
-                           (when (and (buffer-live-p (current-buffer))
-                                      (buffer-file-name)
-                                      (string= (buffer-file-name) filepath))
-                             (let ((new-words (blast--count-words))
-                                   (new-lines (count-lines (point-min) (point-max))))
-                               (let ((word-delta (- new-words blast--last-word-count)))
-                                 (when (> word-delta 0)
-                                   (plist-put metrics :words-added
-                                              (+ (plist-get metrics :words-added) word-delta))))
-                               (let ((line-delta (- new-lines blast--last-line-count)))
-                                 (cond
-                                  ((> line-delta 0)
-                                   (plist-put metrics :lines-added
-                                              (+ (plist-get metrics :lines-added) line-delta)))
-                                  ((< line-delta 0)
-                                   (plist-put metrics :lines-removed
-                                              (+ (plist-get metrics :lines-removed) (abs line-delta))))))
-                               (setq blast--last-word-count new-words)
-                               (setq blast--last-line-count new-lines))))))
+      (let ((buffer (current-buffer)))
+        (setq blast--debounce-timer
+              (run-at-time (/ blast-debounce-ms 1000.0) nil
+                           (lambda ()
+                             (when (buffer-live-p buffer)
+                               (with-current-buffer buffer
+                                 (when (and (buffer-file-name)
+                                            (string= (buffer-file-name) filepath))
+                                   (let ((new-words (blast--count-words))
+                                         (new-lines (count-lines (point-min) (point-max))))
+                                     (let ((word-delta (- new-words blast--last-word-count)))
+                                       (when (> word-delta 0)
+                                         (plist-put metrics :words-added
+                                                    (+ (plist-get metrics :words-added) word-delta))))
+                                     (let ((line-delta (- new-lines blast--last-line-count)))
+                                       (cond
+                                        ((> line-delta 0)
+                                         (plist-put metrics :lines-added
+                                                    (+ (plist-get metrics :lines-added) line-delta)))
+                                        ((< line-delta 0)
+                                         (plist-put metrics :lines-removed
+                                                    (+ (plist-get metrics :lines-removed) (abs line-delta))))))
+                                     (setq blast--last-word-count new-words)
+                                     (setq blast--last-line-count new-lines)))))))))
       (blast--reset-idle-timer))))
 
 ;;; Timers
