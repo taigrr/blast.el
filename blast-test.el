@@ -193,6 +193,38 @@
             (should (string= (expand-file-name found) (expand-file-name git-dir)))))
       (delete-directory root t))))
 
+(ert-deftest blast-test-find-git-marker-upward-supports-dotgit-file ()
+  "Test upward Git marker search with a worktree-style `.git' file."
+  (let* ((root (make-temp-file "blast-root-" t))
+         (git-file (expand-file-name ".git" root))
+         (sub (expand-file-name "src/lib" root)))
+    (unwind-protect
+        (progn
+          (make-directory sub t)
+          (with-temp-file git-file
+            (insert "gitdir: /tmp/worktrees/blast\n"))
+          (let ((found (blast--find-git-marker-upward sub)))
+            (should found)
+            (should (string= (expand-file-name found) (expand-file-name git-file)))))
+      (delete-directory root t))))
+
+(ert-deftest blast-test-get-git-root-supports-dotgit-file ()
+  "Test git root detection with a worktree-style `.git' file."
+  (let* ((root (make-temp-file "blast-root-" t))
+         (git-file (expand-file-name ".git" root))
+         (sub (expand-file-name "src/lib" root))
+         (file (expand-file-name "test.el" sub)))
+    (unwind-protect
+        (progn
+          (make-directory sub t)
+          (with-temp-file git-file
+            (insert "gitdir: /tmp/worktrees/blast\n"))
+          (with-temp-file file
+            (insert ";; test"))
+          (should (string= (expand-file-name (blast--get-git-root file))
+                           (file-name-as-directory (expand-file-name root)))))
+      (delete-directory root t))))
+
 (ert-deftest blast-test-count-words ()
   "Test word counting in buffer."
   (with-temp-buffer
