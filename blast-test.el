@@ -299,6 +299,29 @@
     (blast--get-file-metrics "/tmp/idle.el" "elisp")
     (should-not (blast--build-activities))))
 
+(ert-deftest blast-test-end-session-sends-final-activity ()
+  "Test that ending a long session sends accumulated activity."
+  (let ((blast--current-session (list :project "test" :git-remote "git@example.com:test/repo.git"
+                                      :git-branch "main" :started-at (- (float-time) 60)
+                                      :private nil))
+        (blast--file-metrics (make-hash-table :test 'equal))
+        (blast--current-file nil)
+        (blast--current-file-entered-at nil)
+        (blast--flush-timer nil)
+        (sent nil))
+    (let ((metrics (blast--get-file-metrics "/tmp/test.el" "elisp")))
+      (plist-put metrics :action-count 3)
+      (plist-put metrics :active-seconds 60.0))
+    (cl-letf (((symbol-function 'blast--send-activity)
+               (lambda (activity)
+                 (push activity sent)
+                 t)))
+      (blast--end-session))
+    (should (= (length sent) 1))
+    (should (equal (cdr (assq 'project (car sent))) "test"))
+    (should-not blast--current-session)
+    (should (= (hash-table-count blast--file-metrics) 0))))
+
 (ert-deftest blast-test-clock-in-out ()
   "Test clock-in and clock-out tracking."
   (let ((blast--file-metrics (make-hash-table :test 'equal))
