@@ -163,6 +163,67 @@
                              "feature/cached-branch")))))
       (delete-directory root t))))
 
+(ert-deftest blast-test-get-project-info-prefers-nearest-blast-config ()
+  "Test nested `.blast.toml` files override parent project config."
+  (let* ((root (make-temp-file "blast-root-" t))
+         (git-dir (expand-file-name ".git" root))
+         (app-dir (expand-file-name "apps/web" root))
+         (file (expand-file-name "index.el" app-dir))
+         (blast--project-cache (make-hash-table :test 'equal)))
+    (unwind-protect
+        (progn
+          (make-directory git-dir t)
+          (make-directory app-dir t)
+          (with-temp-file (expand-file-name ".blast.toml" root)
+            (insert "name = \"monorepo\"\n"))
+          (with-temp-file (expand-file-name ".blast.toml" app-dir)
+            (insert "name = \"web\"\nprivate = true\n"))
+          (with-temp-file file
+            (insert ";; nested test"))
+          (cl-letf (((symbol-function 'blast--exec)
+                     (lambda (command)
+                       (cond
+                        ((string-match-p "remote get-url origin" command)
+                         "git@github.com:taigrr/blast.el.git")
+                        ((string-match-p "rev-parse --abbrev-ref HEAD" command)
+                         "main")
+                        (t nil)))))
+            (let ((info (blast--get-project-info file)))
+              (should (equal (plist-get info :project) "web"))
+              (should (plist-get info :private))
+              (should (equal (plist-get info :git-root)
+                             (file-name-as-directory root))))))
+      (delete-directory root t))))
+
+(ert-deftest blast-test-get-project-info-stops-at-git-root-for-blast-config ()
+  "Test `.blast.toml` lookup does not escape the current git repository."
+  (let* ((outer-root (make-temp-file "blast-outer-" t))
+         (inner-root (expand-file-name "repo" outer-root))
+         (git-dir (expand-file-name ".git" inner-root))
+         (src-dir (expand-file-name "src" inner-root))
+         (file (expand-file-name "main.el" src-dir))
+         (blast--project-cache (make-hash-table :test 'equal)))
+    (unwind-protect
+        (progn
+          (make-directory git-dir t)
+          (make-directory src-dir t)
+          (with-temp-file (expand-file-name ".blast.toml" outer-root)
+            (insert "name = \"outside\"\nprivate = true\n"))
+          (with-temp-file file
+            (insert ";; stop at git root"))
+          (cl-letf (((symbol-function 'blast--exec)
+                     (lambda (command)
+                       (cond
+                        ((string-match-p "remote get-url origin" command)
+                         "git@github.com:taigrr/blast.el.git")
+                        ((string-match-p "rev-parse --abbrev-ref HEAD" command)
+                         "main")
+                        (t nil)))))
+            (let ((info (blast--get-project-info file)))
+              (should (equal (plist-get info :project) "repo"))
+              (should-not (plist-get info :private)))))
+      (delete-directory outer-root t))))
+
 (ert-deftest blast-test-ignored-buffer-no-file ()
   "Test that buffers without files are ignored."
   (with-temp-buffer
