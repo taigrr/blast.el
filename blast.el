@@ -292,10 +292,10 @@ Returns a plist with :project, :git-remote, :git-branch, :private."
   "Format TIME as ISO 8601 UTC string."
   (format-time-string "%Y-%m-%dT%H:%M:%SZ" time t))
 
-(defun blast--normalize-filetype (mode-name)
-  "Convert MODE-NAME (e.g. `emacs-lisp-mode') to a clean filetype string.
+(defun blast--normalize-filetype (mode)
+  "Convert MODE (e.g. `emacs-lisp-mode') to a clean filetype string.
 Strips the `-mode' suffix and maps common names to match VS Code/Neovim conventions."
-  (let* ((name (if (symbolp mode-name) (symbol-name mode-name) mode-name))
+  (let* ((name (if (symbolp mode) (symbol-name mode) mode))
          (stripped (if (string-suffix-p "-mode" name)
                        (substring name 0 (- (length name) 5))
                      name))
@@ -369,12 +369,12 @@ Strips the `-mode' suffix and maps common names to match VS Code/Neovim conventi
        (setq blast--process nil)
        nil))))
 
-(defun blast--process-filter (process output)
-  "Handle OUTPUT from PROCESS."
+(defun blast--process-filter (_process output)
+  "Handle OUTPUT from the connection process."
   (blast--debug "Received: %s" (string-trim output)))
 
-(defun blast--process-sentinel (process event)
-  "Handle PROCESS state change EVENT."
+(defun blast--process-sentinel (_process event)
+  "Handle connection process state change EVENT."
   (when (string-match-p "\\(deleted\\|connection broken\\|failed\\)" event)
     (blast--debug "Connection closed: %s" (string-trim event))
     (setq blast--process nil)))
@@ -390,7 +390,8 @@ Strips the `-mode' suffix and maps common names to match VS Code/Neovim conventi
   (and blast--process (process-live-p blast--process)))
 
 (defun blast--send (data)
-  "Send DATA as JSON to blastd.  Returns t on success."
+  "Send DATA as JSON to blastd.
+Return t on success."
   (when (blast--connect)
     (condition-case err
         (let ((json-str (concat (json-encode data) "\n")))
@@ -423,7 +424,7 @@ Opens a dedicated connection for request-response."
                                           (funcall callback t (or (cdr (assq 'message resp)) "ok"))
                                         (funcall callback nil (or (cdr (assq 'error resp)) "unknown error")))
                                     (funcall callback nil "invalid response")))))
-                    :sentinel (lambda (proc event)
+                    :sentinel (lambda (_proc event)
                                 (when (string-match-p "failed\\|broken" event)
                                   (funcall callback nil (format "connection error: %s" event)))))))
         (process-send-string proc (concat (json-encode data) "\n")))
