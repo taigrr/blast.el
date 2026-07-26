@@ -9,6 +9,17 @@ Emacs package for [NvimBlast](https://nvimblast.com) activity tracking.
 
 ## Installation
 
+### package-vc
+
+Emacs 29+ can install directly from GitHub:
+
+```elisp
+(package-vc-install
+ '(blast :url "https://github.com/taigrr/blast.el.git"
+         :rev :newest))
+(blast-mode 1)
+```
+
 ### Manual
 
 Clone the repository and add to your load path:
@@ -45,6 +56,8 @@ go install github.com/taigrr/blastd@latest
 ```
 
 Or download a binary from the [releases page](https://github.com/taigrr/blastd/releases).
+
+After `blastd` is installed and running, enable tracking with `M-x blast-mode`.
 
 ## Commands
 
