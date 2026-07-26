@@ -15,9 +15,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: purcell/setup-emacs@master
-        with:
-          version: ${{ matrix.emacs-version }}
-
       - name: Run tests
-        run: emacs --batch -l blast-test.el -f ert-run-tests-batch-and-exit
+        run: |
+          docker run --rm \
+            -v "$PWD:/work" \
+            -w /work \
+            silex/emacs:${{ matrix.emacs-version }} \
+            emacs -Q --batch -l blast-test.el -f ert-run-tests-batch-and-exit
