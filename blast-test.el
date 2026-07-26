@@ -113,6 +113,26 @@
     (blast--clear-project-cache)
     (should (= (hash-table-count blast--project-cache) 0))))
 
+(ert-deftest blast-test-git-output-trims-success ()
+  "Test git helper returns trimmed stdout on success."
+  (cl-letf (((symbol-function 'process-file)
+             (lambda (program _infile destination _display &rest args)
+               (should (equal program "git"))
+               (should (eq destination t))
+               (should (equal args '("-C" "/tmp/repo" "rev-parse" "--abbrev-ref" "HEAD")))
+               (insert "main\n")
+               0)))
+    (should (equal (blast--git-output "/tmp/repo" "rev-parse" "--abbrev-ref" "HEAD")
+                   "main"))))
+
+(ert-deftest blast-test-git-output-ignores-failures ()
+  "Test git helper returns nil when git exits unsuccessfully."
+  (cl-letf (((symbol-function 'process-file)
+             (lambda (&rest _)
+               (insert "fatal: not a git repository\n")
+               128)))
+    (should-not (blast--git-output "/tmp/repo" "remote" "get-url" "origin"))))
+
 (ert-deftest blast-test-get-project-info-refreshes-branch-from-cache ()
   "Test cached project info still refreshes mutable git branch metadata."
   (let* ((root (make-temp-file "blast-root-" t))
@@ -125,12 +145,12 @@
           (make-directory git-dir t)
           (with-temp-file file
             (insert ";; test"))
-          (cl-letf (((symbol-function 'blast--exec)
-                     (lambda (command)
+          (cl-letf (((symbol-function 'blast--git-output)
+                     (lambda (_git-root &rest args)
                        (cond
-                        ((string-match-p "remote get-url origin" command)
+                        ((equal args '("remote" "get-url" "origin"))
                          "git@github.com:taigrr/blast.el.git")
-                        ((string-match-p "rev-parse --abbrev-ref HEAD" command)
+                        ((equal args '("rev-parse" "--abbrev-ref" "HEAD"))
                          (setq branch-calls (1+ branch-calls))
                          (if (= branch-calls 1) "main" "feature/cached-branch"))
                         (t nil)))))

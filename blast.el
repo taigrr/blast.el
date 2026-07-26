@@ -186,11 +186,13 @@ Returns the path to either a `.git' directory or file."
     (when git-marker
       (file-name-directory (directory-file-name git-marker)))))
 
-(defun blast--exec (command)
-  "Execute COMMAND and return trimmed output."
-  (let ((result (shell-command-to-string command)))
-    (when (and result (not (string= result "")))
-      (string-trim result))))
+(defun blast--git-output (git-root &rest args)
+  "Run git in GIT-ROOT with ARGS and return trimmed stdout."
+  (with-temp-buffer
+    (when (zerop (apply #'process-file "git" nil t nil "-C" git-root args))
+      (let ((result (string-trim (buffer-string))))
+        (unless (string= result "")
+          result)))))
 
 (defun blast--read-file (path)
   "Read and return contents of file at PATH."
@@ -211,14 +213,10 @@ Returns a plist with :project, :git-remote, :git-branch, :private."
           ;; Refresh mutable git metadata on every lookup so branch switches are
           ;; noticed even when project-level info is cached.
           (when git-root
-            (let ((remote (blast--exec
-                           (format "git -C %s remote get-url origin 2>/dev/null"
-                                   (shell-quote-argument git-root)))))
+            (let ((remote (blast--git-output git-root "remote" "get-url" "origin")))
               (when remote
                 (setq git-remote remote)))
-            (let ((branch (blast--exec
-                           (format "git -C %s rev-parse --abbrev-ref HEAD 2>/dev/null"
-                                   (shell-quote-argument git-root)))))
+            (let ((branch (blast--git-output git-root "rev-parse" "--abbrev-ref" "HEAD")))
               (when branch
                 (setq git-branch branch))))
           (let ((info (list :project (plist-get cached :project)
@@ -249,15 +247,11 @@ Returns a plist with :project, :git-remote, :git-branch, :private."
           (unless project
             (setq project (file-name-nondirectory
                            (directory-file-name git-root))))
-          (let ((remote (blast--exec
-                         (format "git -C %s remote get-url origin 2>/dev/null"
-                                 (shell-quote-argument git-root)))))
-            (when (and remote (not (string= remote "")))
+          (let ((remote (blast--git-output git-root "remote" "get-url" "origin")))
+            (when remote
               (setq git-remote remote)))
-          (let ((branch (blast--exec
-                         (format "git -C %s rev-parse --abbrev-ref HEAD 2>/dev/null"
-                                 (shell-quote-argument git-root)))))
-            (when (and branch (not (string= branch "")))
+          (let ((branch (blast--git-output git-root "rev-parse" "--abbrev-ref" "HEAD")))
+            (when branch
               (setq git-branch branch))))
         ;; Fallback project name
         (unless project
