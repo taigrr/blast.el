@@ -587,11 +587,11 @@ Opens a dedicated connection for request-response."
   (when blast--current-session
     (let* ((session blast--current-session)
            (duration (- (float-time) (plist-get session :started-at))))
-      (setq blast--current-session nil)
       (blast--stop-flush-timer)
       (if (< duration 10)
           ;; Discard short sessions
           (progn
+            (setq blast--current-session nil)
             (clrhash blast--file-metrics)
             (setq blast--current-file nil)
             (setq blast--current-file-entered-at nil)
@@ -606,6 +606,7 @@ Opens a dedicated connection for request-response."
                         (round duration)
                         (length activities)
                         (if (plist-get session :private) " [private]" "")))
+        (setq blast--current-session nil)
         (clrhash blast--file-metrics)
         (setq blast--current-file nil)
         (setq blast--current-file-entered-at nil)
