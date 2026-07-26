@@ -184,6 +184,23 @@
           (should (blast--ignored-buffer-p)))
       (kill-buffer buf))))
 
+(ert-deftest blast-test-ignored-buffer-space-name ()
+  "Test that a space-named buffer is ignored."
+  (let ((buf (generate-new-buffer " ")))
+    (unwind-protect
+        (with-current-buffer buf
+          (setq buffer-file-name "/tmp/fake.el")
+          (should (blast--ignored-buffer-p)))
+      (kill-buffer buf))))
+
+(ert-deftest blast-test-ignored-buffer-custom-major-mode ()
+  "Test that user-configured major modes are ignored."
+  (with-temp-buffer
+    (setq buffer-file-name "/tmp/fake.el")
+    (let ((major-mode 'compilation-mode)
+          (blast-ignored-major-modes '(compilation-mode)))
+      (should (blast--ignored-buffer-p)))))
+
 (ert-deftest blast-test-find-file-upward ()
   "Test upward file search."
   (let* ((root (make-temp-file "blast-root-" t))
