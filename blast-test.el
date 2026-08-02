@@ -11,7 +11,7 @@
 
 ;; Load blast.el from same directory
 (let ((dir (file-name-directory (or load-file-name buffer-file-name))))
-  (load (expand-file-name "blast" dir)))
+  (load-file (expand-file-name "blast.el" dir)))
 
 ;;; Utility tests
 
@@ -180,12 +180,12 @@
             (insert "name = \"web\"\nprivate = true\n"))
           (with-temp-file file
             (insert ";; nested test"))
-          (cl-letf (((symbol-function 'blast--exec)
-                     (lambda (command)
+          (cl-letf (((symbol-function 'blast--git-output)
+                     (lambda (_git-root &rest args)
                        (cond
-                        ((string-match-p "remote get-url origin" command)
+                        ((equal args '("remote" "get-url" "origin"))
                          "git@github.com:taigrr/blast.el.git")
-                        ((string-match-p "rev-parse --abbrev-ref HEAD" command)
+                        ((equal args '("rev-parse" "--abbrev-ref" "HEAD"))
                          "main")
                         (t nil)))))
             (let ((info (blast--get-project-info file)))
@@ -211,12 +211,12 @@
             (insert "name = \"outside\"\nprivate = true\n"))
           (with-temp-file file
             (insert ";; stop at git root"))
-          (cl-letf (((symbol-function 'blast--exec)
-                     (lambda (command)
+          (cl-letf (((symbol-function 'blast--git-output)
+                     (lambda (_git-root &rest args)
                        (cond
-                        ((string-match-p "remote get-url origin" command)
+                        ((equal args '("remote" "get-url" "origin"))
                          "git@github.com:taigrr/blast.el.git")
-                        ((string-match-p "rev-parse --abbrev-ref HEAD" command)
+                        ((equal args '("rev-parse" "--abbrev-ref" "HEAD"))
                          "main")
                         (t nil)))))
             (let ((info (blast--get-project-info file)))

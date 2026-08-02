@@ -189,7 +189,8 @@ Returns the path to either a `.git' directory or file."
 (defun blast--git-output (git-root &rest args)
   "Run git in GIT-ROOT with ARGS and return trimmed stdout."
   (with-temp-buffer
-    (when (zerop (apply #'process-file "git" nil t nil "-C" git-root args))
+    (when (ignore-errors
+            (zerop (apply #'process-file "git" nil t nil "-C" git-root args)))
       (let ((result (string-trim (buffer-string))))
         (unless (string= result "")
           result)))))
@@ -293,8 +294,10 @@ Returns a plist with :project, :git-remote, :git-branch, :private."
   (format-time-string "%Y-%m-%dT%H:%M:%SZ" time t))
 
 (defun blast--normalize-filetype (mode)
-  "Convert MODE (e.g. `emacs-lisp-mode') to a clean filetype string.
-Strips the `-mode' suffix and maps common names to match VS Code/Neovim conventions."
+  "Convert MODE to a clean filetype string.
+For example, convert `emacs-lisp-mode' to `elisp'.
+Strips the `-mode' suffix and maps common names to match VS Code/Neovim
+conventions."
   (let* ((name (if (symbolp mode) (symbol-name mode) mode))
          (stripped (if (string-suffix-p "-mode" name)
                        (substring name 0 (- (length name) 5))
