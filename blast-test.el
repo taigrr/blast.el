@@ -9,9 +9,12 @@
 (require 'ert)
 (require 'cl-lib)
 
-;; Load blast.el from same directory
-(let ((dir (file-name-directory (or load-file-name buffer-file-name))))
-  (load-file (expand-file-name "blast.el" dir)))
+;; Load blast.el from same directory for both runtime and byte compilation.
+(eval-and-compile
+  (let ((dir (file-name-directory (or load-file-name
+                                      (bound-and-true-p byte-compile-current-file)
+                                      buffer-file-name))))
+    (load-file (expand-file-name "blast.el" dir))))
 
 ;;; Utility tests
 
