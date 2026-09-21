@@ -269,11 +269,12 @@ Returns a plist with :project, :git-remote, :git-branch, :private."
 (defun blast--make-relative (filepath)
   "Make FILEPATH relative to git root or return basename."
   (if filepath
-      (let ((git-root (blast--get-git-root filepath)))
+      (let* ((absolute-path (expand-file-name filepath))
+             (git-root (blast--get-git-root absolute-path)))
         (if git-root
-            (let ((rel (substring filepath (length git-root))))
-              (if (string= rel "") (file-name-nondirectory filepath) rel))
-          (file-name-nondirectory filepath)))
+            (let ((rel (file-relative-name absolute-path git-root)))
+              (if (string= rel ".") (file-name-nondirectory absolute-path) rel))
+          (file-name-nondirectory absolute-path)))
     filepath))
 
 (defun blast--count-words ()
@@ -674,7 +675,9 @@ Opens a dedicated connection for request-response."
       ;; Debounced word/line counting
       (when blast--debounce-timer
         (cancel-timer blast--debounce-timer))
-      (let ((buffer (current-buffer)))
+      (let ((buffer (current-buffer))
+            (last-word-count blast--last-word-count)
+            (last-line-count blast--last-line-count))
         (setq blast--debounce-timer
               (run-at-time (/ blast-debounce-ms 1000.0) nil
                            (lambda ()
@@ -684,11 +687,11 @@ Opens a dedicated connection for request-response."
                                             (string= (buffer-file-name) filepath))
                                    (let ((new-words (blast--count-words))
                                          (new-lines (count-lines (point-min) (point-max))))
-                                     (let ((word-delta (- new-words blast--last-word-count)))
+                                     (let ((word-delta (- new-words last-word-count)))
                                        (when (> word-delta 0)
                                          (plist-put metrics :words-added
                                                     (+ (plist-get metrics :words-added) word-delta))))
-                                     (let ((line-delta (- new-lines blast--last-line-count)))
+                                     (let ((line-delta (- new-lines last-line-count)))
                                        (cond
                                         ((> line-delta 0)
                                          (plist-put metrics :lines-added
