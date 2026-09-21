@@ -269,11 +269,12 @@ Returns a plist with :project, :git-remote, :git-branch, :private."
 (defun blast--make-relative (filepath)
   "Make FILEPATH relative to git root or return basename."
   (if filepath
-      (let ((git-root (blast--get-git-root filepath)))
+      (let* ((absolute-path (expand-file-name filepath))
+             (git-root (blast--get-git-root absolute-path)))
         (if git-root
-            (let ((rel (substring filepath (length git-root))))
-              (if (string= rel "") (file-name-nondirectory filepath) rel))
-          (file-name-nondirectory filepath)))
+            (let ((rel (file-relative-name absolute-path git-root)))
+              (if (string= rel ".") (file-name-nondirectory absolute-path) rel))
+          (file-name-nondirectory absolute-path)))
     filepath))
 
 (defun blast--count-words ()
