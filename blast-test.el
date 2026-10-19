@@ -112,6 +112,21 @@
                        (file-name-nondirectory temp-file)))
       (delete-file temp-file))))
 
+(ert-deftest blast-test-make-relative-git-file ()
+  "Test git-tracked files are returned relative to the repository root."
+  (let* ((root (make-temp-file "blast-root-" t))
+         (git-dir (expand-file-name ".git" root))
+         (src-dir (expand-file-name "src/lib" root))
+         (file (expand-file-name "test.el" src-dir)))
+    (unwind-protect
+        (progn
+          (make-directory git-dir t)
+          (make-directory src-dir t)
+          (with-temp-file file
+            (insert ";; test"))
+          (should (equal (blast--make-relative file) "src/lib/test.el")))
+      (delete-directory root t))))
+
 (ert-deftest blast-test-project-cache ()
   "Test project cache clearing."
   (let ((blast--project-cache (make-hash-table :test 'equal)))
@@ -468,6 +483,35 @@
           (should (= (plist-get metrics :action-count) 1))
           (should (= (plist-get metrics :words-added) 2))
           (should (= (plist-get metrics :lines-added) 1)))))))
+
+(ert-deftest blast-test-on-text-change-captures-source-baseline ()
+  "Test debounced metrics use counts from the original edit."
+  (let ((blast--current-file nil)
+        (blast--debounce-timer nil)
+        (blast--last-activity 0)
+        (blast--last-word-count 2)
+        (blast--last-line-count 1)
+        (blast--file-metrics (make-hash-table :test 'equal)))
+    (with-temp-buffer
+      (setq buffer-file-name "/tmp/source.txt")
+      (insert "one two three\nfour\n")
+      (let ((scheduled nil))
+        (cl-letf (((symbol-function 'blast--ignored-buffer-p) (lambda () nil))
+                  ((symbol-function 'blast--reset-idle-timer) (lambda () nil))
+                  ((symbol-function 'run-at-time)
+                   (lambda (_time _repeat fn)
+                     (setq scheduled fn)
+                     'fake-timer)))
+          (blast--on-text-change))
+        (setq blast--last-word-count 100)
+        (setq blast--last-line-count 100)
+        (should scheduled)
+        (funcall scheduled)
+        (let ((metrics (gethash "/tmp/source.txt" blast--file-metrics)))
+          (should (= (plist-get metrics :words-added) 2))
+          (should (= (plist-get metrics :lines-added) 1))
+          (should (= blast--last-word-count 4))
+          (should (= blast--last-line-count 2)))))))
 
 (provide 'blast-test)
 ;;; blast-test.el ends here
