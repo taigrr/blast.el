@@ -421,9 +421,13 @@ Opens a dedicated connection for request-response."
                               (setq buffer (concat buffer output))
                               (when (string-match "^\\([^\n]+\\)\n" buffer)
                                 (let* ((line (match-string 1 buffer))
-                                       (resp (ignore-errors (json-read-from-string line))))
+                                       (resp (let ((json-object-type 'alist)
+                                                   (json-key-type 'symbol)
+                                                   (json-array-type 'vector))
+                                               (ignore-errors
+                                                 (json-read-from-string line)))))
                                   (delete-process proc)
-                                  (if resp
+                                  (if (and (consp resp) (cl-every #'consp resp))
                                       (if (eq (cdr (assq 'ok resp)) t)
                                           (funcall callback t (or (cdr (assq 'message resp)) "ok"))
                                         (funcall callback nil (or (cdr (assq 'error resp)) "unknown error")))
