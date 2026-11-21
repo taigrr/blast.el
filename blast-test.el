@@ -246,6 +246,34 @@
               (should-not (plist-get info :private)))))
       (delete-directory outer-root t))))
 
+(ert-deftest blast-test-project-cache-refreshes-config ()
+  "Warm caches must notice config creation, edits, and removal."
+  (let* ((root (make-temp-file "blast-config-" t))
+         (config (expand-file-name ".blast.toml" root))
+         (file (expand-file-name "test.el" root))
+         (blast--project-cache (make-hash-table :test 'equal)))
+    (unwind-protect
+        (cl-letf (((symbol-function 'blast--git-output)
+                   (lambda (&rest _) nil)))
+          (make-directory (expand-file-name ".git" root))
+          (should-not (plist-get (blast--get-project-info file) :private))
+          (with-temp-file config
+            (insert "name = \"secret\"\nprivate = true\n"))
+          (let ((info (blast--get-project-info file)))
+            (should (plist-get info :private))
+            (should (equal (plist-get info :project) "secret")))
+          (with-temp-file config
+            (insert "name = \"public\"\nprivate = false\n"))
+          (let ((info (blast--get-project-info file)))
+            (should-not (plist-get info :private))
+            (should (equal (plist-get info :project) "public")))
+          (delete-file config)
+          (let ((info (blast--get-project-info file)))
+            (should-not (plist-get info :private))
+            (should (equal (plist-get info :project)
+                           (file-name-nondirectory root)))))
+      (delete-directory root t))))
+
 (ert-deftest blast-test-ignored-buffer-no-file ()
   "Test that buffers without files are ignored."
   (with-temp-buffer

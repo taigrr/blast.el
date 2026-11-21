@@ -109,7 +109,8 @@
   "Timestamp of last activity.")
 
 (defvar blast--project-cache (make-hash-table :test 'equal)
-  "Cache of directory -> project info.")
+  "Cache of directory -> project info.
+Repository discovery is cached; configuration is reread on every lookup.")
 
 (defun blast--clear-project-cache ()
   "Clear the project info cache.
@@ -207,64 +208,49 @@ Returns the path to either a `.git' directory or file."
 Returns a plist with :project, :git-remote, :git-branch, :private."
   (let* ((dir (file-name-directory (expand-file-name filepath)))
          (cached (gethash dir blast--project-cache)))
-    (if cached
-        (let* ((git-root (plist-get cached :git-root))
-               (git-remote (plist-get cached :git-remote))
-               (git-branch (plist-get cached :git-branch)))
-          ;; Refresh mutable git metadata on every lookup so branch switches are
-          ;; noticed even when project-level info is cached.
-          (when git-root
-            (let ((remote (blast--git-output git-root "remote" "get-url" "origin")))
-              (when remote
-                (setq git-remote remote)))
-            (let ((branch (blast--git-output git-root "rev-parse" "--abbrev-ref" "HEAD")))
-              (when branch
-                (setq git-branch branch))))
-          (let ((info (list :project (plist-get cached :project)
-                            :git-root git-root
-                            :git-remote git-remote
-                            :git-branch git-branch
-                            :private (plist-get cached :private))))
-            (puthash dir info blast--project-cache)
-            info))
-      (let* ((git-marker (blast--find-git-marker-upward dir))
-             (git-root (when git-marker
-                         (file-name-directory (directory-file-name git-marker))))
-             (blast-config (blast--find-file-upward ".blast.toml" dir git-root))
-             (project nil)
-             (git-remote nil)
-             (git-branch nil)
-             (private nil))
-        ;; Parse .blast.toml if present
-        (when blast-config
-          (let ((content (blast--read-file blast-config)))
-            (when content
-              (when (string-match "name\\s-*=\\s-*\"\\([^\"]+\\)\"" content)
-                (setq project (match-string 1 content)))
-              (when (string-match "private\\s-*=\\s-*true" content)
-                (setq private t)))))
-        ;; Get git info
-        (when git-root
-          (unless project
-            (setq project (file-name-nondirectory
-                           (directory-file-name git-root))))
-          (let ((remote (blast--git-output git-root "remote" "get-url" "origin")))
-            (when remote
-              (setq git-remote remote)))
-          (let ((branch (blast--git-output git-root "rev-parse" "--abbrev-ref" "HEAD")))
-            (when branch
-              (setq git-branch branch))))
-        ;; Fallback project name
+    (let* ((git-marker (unless cached
+                         (blast--find-git-marker-upward dir)))
+           (git-root (if cached
+                         (plist-get cached :git-root)
+                       (when git-marker
+                         (file-name-directory (directory-file-name git-marker)))))
+           ;; Config files may be added, edited, or removed during a session.
+           ;; Cache repository discovery, never project/privacy overrides.
+           (blast-config (blast--find-file-upward ".blast.toml" dir git-root))
+           (project nil)
+           (git-remote (plist-get cached :git-remote))
+           (git-branch (plist-get cached :git-branch))
+           (private nil))
+      ;; Parse .blast.toml if present
+      (when blast-config
+        (let ((content (blast--read-file blast-config)))
+          (when content
+            (when (string-match "name\\s-*=\\s-*\"\\([^\"]+\\)\"" content)
+              (setq project (match-string 1 content)))
+            (when (string-match "private\\s-*=\\s-*true" content)
+              (setq private t)))))
+      ;; Get git info
+      (when git-root
         (unless project
-          (setq project (file-name-nondirectory (directory-file-name dir))))
-        ;; Cache and return
-        (let ((info (list :project project
-                          :git-root git-root
-                          :git-remote git-remote
-                          :git-branch git-branch
-                          :private private)))
-          (puthash dir info blast--project-cache)
-          info)))))
+          (setq project (file-name-nondirectory
+                         (directory-file-name git-root))))
+        (let ((remote (blast--git-output git-root "remote" "get-url" "origin")))
+          (when remote
+            (setq git-remote remote)))
+        (let ((branch (blast--git-output git-root "rev-parse" "--abbrev-ref" "HEAD")))
+          (when branch
+            (setq git-branch branch))))
+      ;; Fallback project name
+      (unless project
+        (setq project (file-name-nondirectory (directory-file-name dir))))
+      ;; Cache and return
+      (let ((info (list :project project
+                        :git-root git-root
+                        :git-remote git-remote
+                        :git-branch git-branch
+                        :private private)))
+        (puthash dir info blast--project-cache)
+        info))))
 
 (defun blast--make-relative (filepath)
   "Make FILEPATH relative to git root or return basename."
